@@ -1,5 +1,3 @@
-# app/crud.py
-
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import distinct, or_

@@ -1,5 +1,3 @@
-# bot/bot.py
-
 import os
 import sys
 import asyncio
@@ -7,7 +5,7 @@ import logging
 import uuid
 import math
 
-# Добавляем корень проекта в sys.path, чтобы можно было импортировать app/…
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from aiogram import Bot, Dispatcher, types
@@ -22,28 +20,25 @@ from app.models import Tea
 from app.crud import get_all_categories, get_teas_by_category, get_tea  # предполагаем, что эти функции есть в crud
 from config import TOKEN, ADMIN
 
-# Настройка логирования
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Создаем бота и диспетчер
+
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# Глобальный словарь для хранения корзины в памяти: {user_id: [{"tea_id": int, "quantity": int}, ...], ...}
+
 CARTS = {}
 
-# Фоновая задача: каждые 10 часов очищаем CARTS
+# Фоновая задача: каждые 10h очистка CARTS
 async def clear_cache_periodically():
     while True:
         await asyncio.sleep(10 * 3600)
         CARTS.clear()
         logger.info("Кеш (CARTS) очищен.")
 
-# =========================
-# ★ FSM-Состояния ★
-# =========================
-
+#FSM-Состояния
 class OrderForm(StatesGroup):
     waiting_for_fio = State()
     waiting_for_address = State()
@@ -57,10 +52,8 @@ class SearchForm(StatesGroup):
 class TeaCalcForm(StatesGroup):
     waiting_for_grams = State()
 
-# =========================
-# ★ ФОРМИРОВАНИЕ КЛАВИАТУР ★
-# =========================
 
+#Формирование клавиатур
 def main_menu_reply() -> types.ReplyKeyboardMarkup:
     buttons = [
         [types.KeyboardButton(text="Каталог"), types.KeyboardButton(text="Поиск")],
@@ -70,7 +63,7 @@ def main_menu_reply() -> types.ReplyKeyboardMarkup:
 
 def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
     """
-    Формируем клавиатуру из категорий, которые лежат в таблице teas (distinct category).
+    Формирование клавиатуры из категорий, которые лежат в таблице teas (distinct category).
     Последняя строка — "Назад".
     """
     db = SessionLocal()
@@ -88,7 +81,7 @@ def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
 
 def product_list_inline(category: str) -> types.InlineKeyboardMarkup:
     """
-    Формируем inline-клавиатуру со списком товаров выбранной категории из БД.
+    Формирование inline-клавиатуры со списком товаров выбранной категории из БД.
     """
     db = SessionLocal()
     try:
@@ -105,7 +98,7 @@ def product_list_inline(category: str) -> types.InlineKeyboardMarkup:
             text=tea.name,
             callback_data=f"item:{tea.id}"
         )])
-    # Добавляем кнопки "В меню" и "Назад"
+
     main_btn = types.InlineKeyboardButton(text="В меню", callback_data="back_to_main")
     back_btn = types.InlineKeyboardButton(text="Назад", callback_data="back_to_catalog")
     buttons.append([main_btn, back_btn])
@@ -201,9 +194,7 @@ def support_inline() -> types.InlineKeyboardMarkup:
     ])
     return keyboard
 
-# =========================
-# ★ ОБРАБОТЧИКИ MESSAGE ★
-# =========================
+#Обработчики message
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -320,10 +311,7 @@ async def process_search(message: types.Message, state: FSMContext):
 async def go_back(message: types.Message):
     await message.answer("Главное меню:", reply_markup=main_menu_reply())
 
-# ============================
-# ★ ОБРАБОТЧИКИ CALLBACK-ЗАПРОСОВ ★
-# ============================
-
+#Обработчики callback-запросов
 @dp.callback_query(lambda c: c.data == "back_to_main")
 async def back_to_main_callback(query: types.CallbackQuery):
     await query.answer()
@@ -748,10 +736,7 @@ async def catch_all_messages(message: types.Message):
     """
     await message.answer("Не понял вашу команду. Нажмите /start, чтобы вернуться в главное меню.")
 
-# =====================
-# Запуск бота
-# =====================
-
+#Запуск бота
 async def main():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
