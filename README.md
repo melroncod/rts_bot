@@ -11,7 +11,7 @@ A lightweight and functional Telegram bot for ordering tea and tea accessories o
 ## Features
 
 - **Product Catalog**
-  - Tea categories and products defined in `database.json` (name, weight, price, description, photo).
+  - Tea categories and products defined in `PostgreSQL` (name, weight, price, description, photo).
   - Navigation via custom reply and inline keyboards.
 - **Cart Management**
   - Add or remove items.
@@ -51,12 +51,13 @@ Use the bot to order tea here: https://t.me/RandomTeaStore_Bot
 - Python 3.11
 - Aiogram
 - python-dotenv
+- ...
 
 Dependencies listed in `requirements.txt`.
 
 ## License
 
-Distributed under the GNU License.  
+Licensed under the Apache License, Version 2.0.  
 © 2025 melroncod
 
 ---
@@ -74,7 +75,7 @@ Distributed under the GNU License.
 ## Функционал
 
 - **Каталог товаров**
-  - Категории чая и товары из `database.json` (название, вес, цена, описание, фото).
+  - Категории чая и товары из `PostgreSQL` (название, вес, цена, описание, фото).
   - Навигация через встроенные клавиатуры.
 - **Управление корзиной**
   - Добавление/удаление позиций.
@@ -114,11 +115,12 @@ Distributed under the GNU License.
 - Python 3.11
 - Aiogram
 - python-dotenv
+- ...
 
 Зависимости указаны в `requirements.txt`.
 
 ## Лицензия
 
-Distributed under the GNU License.  
+Licensed under the Apache License, Version 2.0.  
 © 2025 melroncod
 
