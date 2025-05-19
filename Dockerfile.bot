@@ -1,0 +1,22 @@
+# Dockerfile.bot
+FROM python:3.11-slim
+
+# Устанавливаем рабочую директорию внутри контейнера
+# (сразу под /usr/src/app, чтобы там лежали и app/, и bot/)
+WORKDIR /usr/src/app
+
+# Сначала копируем туда requirements.txt (он находится в корне проекта)
+COPY requirements.txt .
+
+# Устанавливаем все зависимости (aiogram, SQLAlchemy и т.д.)
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Копируем в контейнер весь проект (и папку app/, и папку bot/, и docker-compose.yml, alembic и т.д.)
+COPY . .
+
+# Переходим в папку с кодом бота
+WORKDIR /usr/src/app/bot
+
+# Запускаем бота через python
+CMD ["python", "bot.py"]
