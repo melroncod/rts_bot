@@ -75,7 +75,7 @@ def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
     finally:
         db.close()
 
-    # Задаём свой порядок (те категории, которые хотим видеть первыми)
+
     custom_order = [
         "Шу пуэры",
         "Шен пуэры",
@@ -84,7 +84,7 @@ def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
         "Зелёные",
         "Красные",
         "Белые",
-        "Жёлтые"
+        "Жёлтые",
         "Посуда",
         "Чайные духи",
     ]
