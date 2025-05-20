@@ -63,8 +63,8 @@ def main_menu_reply() -> types.ReplyKeyboardMarkup:
 
 def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
     """
-    Формирование клавиатуры из категорий, которые лежат в таблице teas (distinct category).
-    Последняя строка — "Назад".
+    Формирование клавиатуры из категорий в том порядке,
+    который указан в custom_order. Последняя строка — "Назад".
     """
     db = SessionLocal()
     try:
@@ -75,9 +75,34 @@ def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
     finally:
         db.close()
 
-    buttons = [[types.KeyboardButton(text=cat)] for cat in categories]
+    # Задаём свой порядок (те категории, которые хотим видеть первыми)
+    custom_order = [
+        "Шу пуэры",
+        "Шен пуэры",
+        "Улуны",
+        "Габа улуны",
+        "Зелёные",
+        "Красные",
+        "Белые",
+        "Жёлтые"
+        "Посуда",
+        "Чайные духи",
+    ]
+
+    # Формируем итоговый список ordered:
+    # сначала — те, что есть в custom_order, а потом «лишние» (если они всё же появились в БД, но не вошли в custom_order)
+    ordered = []
+    for cat in custom_order:
+        if cat in categories:
+            ordered.append(cat)
+    for cat in categories:
+        if cat not in ordered:
+            ordered.append(cat)
+
+    buttons = [[types.KeyboardButton(text=cat)] for cat in ordered]
     buttons.append([types.KeyboardButton(text="Назад")])
     return types.ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
 
 def product_list_inline(category: str) -> types.InlineKeyboardMarkup:
     """
