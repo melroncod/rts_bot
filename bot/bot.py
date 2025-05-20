@@ -85,6 +85,7 @@ def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
         "Красные",
         "Белые",
         "Жёлтые",
+        "Хэй Ча",
         "Посуда",
         "Чайные духи",
     ]
