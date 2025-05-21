@@ -18,7 +18,7 @@ from aiogram.fsm.context import FSMContext
 from app.database import SessionLocal
 from app.models import Tea
 from app.crud import get_all_categories, get_teas_by_category, get_tea  # предполагаем, что эти функции есть в crud
-from config import TOKEN, ADMIN
+from config import TOKEN, ADMIN, ADMIN_USER
 
 from admin_tools import handle_admin_command, handle_user_message
 
@@ -216,8 +216,7 @@ def support_inline() -> types.InlineKeyboardMarkup:
     """
     Кнопка для связи с поддержкой/админом.
     """
-    # Замените на свой @username админа
-    admin_username = ADMIN if ADMIN.startswith("@") else f"@{ADMIN}"
+    admin_username = ADMIN_USER if ADMIN_USER.startswith("@") else f"@{ADMIN_USER}"
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="Связаться с поддержкой", url=f"https://t.me/{admin_username.lstrip('@')}")]
     ])
