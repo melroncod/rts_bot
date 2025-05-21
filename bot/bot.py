@@ -20,6 +20,8 @@ from app.models import Tea
 from app.crud import get_all_categories, get_teas_by_category, get_tea  # предполагаем, что эти функции есть в crud
 from config import TOKEN, ADMIN
 
+from admin_tools import handle_admin_command, handle_user_message
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ dp = Dispatcher()
 
 
 CARTS = {}
+
 
 # Фоновая задача: каждые 10h очистка CARTS
 async def clear_cache_periodically():
@@ -221,6 +224,7 @@ def support_inline() -> types.InlineKeyboardMarkup:
     return keyboard
 
 #Обработчики message
+
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -753,14 +757,6 @@ async def process_promo(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Главное меню:", reply_markup=main_menu_reply())
 
-# Ловим все остальные текстовые сообщения (не команды и не категории)
-@dp.message(lambda message: message.text and not message.text.startswith("/"))
-async def catch_all_messages(message: types.Message):
-    """
-    Если сообщение не попало ни под один из основных хендлеров,
-    возвращаем приглашение в главное меню.
-    """
-    await message.answer("Не понял вашу команду. Нажмите /start, чтобы вернуться в главное меню.")
 
 #Запуск бота
 async def main():
@@ -770,6 +766,13 @@ async def main():
         logger.exception("Ошибка удаления webhook: %s", e)
     asyncio.create_task(clear_cache_periodically())
     await dp.start_polling(bot, skip_updates=True)
+
+
+@dp.message(lambda message: message.text and not message.text.startswith("/"))
+async def handle_messages(message: types.Message):
+    await handle_admin_command(message, bot)
+    await handle_user_message(message, bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

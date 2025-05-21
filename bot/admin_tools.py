@@ -1,4 +1,3 @@
-from aiogram import types
 from aiogram.types import Message
 from aiogram import Bot
 from config import ADMIN
