@@ -5,7 +5,6 @@ from bot.bot import bot, dp
 
 import uvicorn
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

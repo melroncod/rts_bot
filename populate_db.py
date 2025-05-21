@@ -3,6 +3,7 @@ import os
 from app.database import engine, SessionLocal, Base
 from app.models import Tea
 
+
 def main():
     # 1) Создаём таблицы, если их нет
     Base.metadata.create_all(bind=engine)
@@ -30,6 +31,7 @@ def main():
             db.add(tea)
     db.commit()
     db.close()
+
 
 if __name__ == "__main__":
     main()

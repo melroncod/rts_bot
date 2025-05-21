@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import sys
+
 sys.path.append(os.getcwd())
 
 from logging.config import fileConfig
@@ -13,15 +14,13 @@ from alembic import context
 config = context.config
 
 from app.database import DATABASE_URL
+
 if not DATABASE_URL:
     raise RuntimeError("В env.py Alembic не смог получить DATABASE_URL из app/database.py")
 
-
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-
 fileConfig(config.config_file_name)
-
 
 from app.database import Base
 from app import models

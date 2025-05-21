@@ -9,6 +9,7 @@ from app import crud, schemas
 
 router = APIRouter(prefix="/api/teas", tags=["teas"])
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -27,10 +28,10 @@ def create_tea(tea: schemas.TeaCreate, db: Session = Depends(get_db)):
 
 @router.get("/", response_model=List[schemas.TeaRead])
 def read_teas(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1),
-    category: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1),
+        category: Optional[str] = Query(None),
+        db: Session = Depends(get_db),
 ):
     teas = crud.get_teas(db, skip=skip, limit=limit, category=category)
     return teas

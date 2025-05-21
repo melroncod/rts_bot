@@ -5,7 +5,6 @@ import logging
 import uuid
 import math
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from aiogram import Bot, Dispatcher, types
@@ -17,19 +16,16 @@ from aiogram.fsm.context import FSMContext
 
 from app.database import SessionLocal
 from app.models import Tea
-from app.crud import get_all_categories, get_teas_by_category, get_tea  # предполагаем, что эти функции есть в crud
+from app.crud import get_all_categories, get_teas_by_category, get_tea
 from config import TOKEN, ADMIN, ADMIN_USER
 
 from admin_tools import handle_admin_command, handle_user_message
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
-
 
 CARTS = {}
 
@@ -41,7 +37,8 @@ async def clear_cache_periodically():
         CARTS.clear()
         logger.info("Кеш (CARTS) очищен.")
 
-#FSM-Состояния
+
+# FSM-Состояния
 class OrderForm(StatesGroup):
     waiting_for_fio = State()
     waiting_for_address = State()
@@ -49,20 +46,23 @@ class OrderForm(StatesGroup):
     waiting_for_comment = State()
     waiting_for_promo = State()
 
+
 class SearchForm(StatesGroup):
     waiting_for_query = State()
+
 
 class TeaCalcForm(StatesGroup):
     waiting_for_grams = State()
 
 
-#Формирование клавиатур
+# Формирование клавиатур
 def main_menu_reply() -> types.ReplyKeyboardMarkup:
     buttons = [
         [types.KeyboardButton(text="Каталог"), types.KeyboardButton(text="Поиск")],
         [types.KeyboardButton(text="Корзина"), types.KeyboardButton(text="Поддержка")]
     ]
     return types.ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
 
 def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
     """
@@ -77,7 +77,6 @@ def catalog_menu_reply() -> types.ReplyKeyboardMarkup:
         categories = []
     finally:
         db.close()
-
 
     custom_order = [
         "Шу пуэры",
@@ -133,6 +132,7 @@ def product_list_inline(category: str) -> types.InlineKeyboardMarkup:
     buttons.append([main_btn, back_btn])
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def product_detail_inline(tea_id: int) -> types.InlineKeyboardMarkup:
     """
     Для конкретного товара: кнопка "Добавить в корзину" и "Назад".
@@ -142,6 +142,7 @@ def product_detail_inline(tea_id: int) -> types.InlineKeyboardMarkup:
         [types.InlineKeyboardButton(text="Назад", callback_data="back_to_details")]
     ]
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 def build_cart_message(user_id: int):
     """
@@ -178,6 +179,7 @@ def build_cart_message(user_id: int):
     ])
     return text, keyboard
 
+
 def build_cart_edit_message(user_id: int):
     """
     Формируем текст и inline-клавиатуру для редактирования корзины:
@@ -212,6 +214,7 @@ def build_cart_edit_message(user_id: int):
 
     return text, keyboard
 
+
 def support_inline() -> types.InlineKeyboardMarkup:
     """
     Кнопка для связи с поддержкой/админом.
@@ -222,7 +225,8 @@ def support_inline() -> types.InlineKeyboardMarkup:
     ])
     return keyboard
 
-#Обработчики message
+
+# Обработчики message
 
 
 @dp.message(Command("start"))
@@ -231,6 +235,7 @@ async def start(message: types.Message):
         "Добро пожаловать! Выберите нужное действие:",
         reply_markup=main_menu_reply()
     )
+
 
 @dp.message(Command("cancel"))
 async def cancel(message: types.Message, state: FSMContext):
@@ -241,9 +246,11 @@ async def cancel(message: types.Message, state: FSMContext):
     else:
         await message.answer("Нет активных операций.", reply_markup=main_menu_reply())
 
+
 @dp.message(lambda message: message.text == "Каталог")
 async def catalog_menu(message: types.Message):
     await message.answer("Выберите категорию:", reply_markup=catalog_menu_reply())
+
 
 @dp.message(lambda message: message.text == "Корзина")
 async def show_cart(message: types.Message):
@@ -253,6 +260,7 @@ async def show_cart(message: types.Message):
         reply_markup=cart_keyboard if cart_keyboard else types.ReplyKeyboardRemove()
     )
 
+
 @dp.message(lambda message: message.text == "Поддержка")
 async def support(message: types.Message):
     await message.answer(
@@ -260,10 +268,12 @@ async def support(message: types.Message):
         reply_markup=support_inline()
     )
 
+
 @dp.message(lambda message: message.text == "Поиск")
 async def search_start(message: types.Message, state: FSMContext):
     await message.answer("Введите ключевое слово или ID товара (для отмены /cancel):")
     await state.set_state(SearchForm.waiting_for_query)
+
 
 # Проверка, является ли текст сообщением-именем категории
 def is_category_message(text: str) -> bool:
@@ -275,6 +285,7 @@ def is_category_message(text: str) -> bool:
         return False
     finally:
         db.close()
+
 
 @dp.message(lambda message: is_category_message(message.text))
 async def select_category(message: types.Message):
@@ -288,6 +299,7 @@ async def select_category(message: types.Message):
     )
     # Inline-клавиатура со списком товаров:
     await message.answer("Список товаров:", reply_markup=product_list_inline(category))
+
 
 @dp.message(SearchForm.waiting_for_query)
 async def process_search(message: types.Message, state: FSMContext):
@@ -336,11 +348,13 @@ async def process_search(message: types.Message, state: FSMContext):
 
     await state.clear()
 
+
 @dp.message(lambda message: message.text == "Назад")
 async def go_back(message: types.Message):
     await message.answer("Главное меню:", reply_markup=main_menu_reply())
 
-#Обработчики callback-запросов
+
+# Обработчики callback-запросов
 @dp.callback_query(lambda c: c.data == "back_to_main")
 async def back_to_main_callback(query: types.CallbackQuery):
     await query.answer()
@@ -350,6 +364,7 @@ async def back_to_main_callback(query: types.CallbackQuery):
         pass
     await bot.send_message(query.from_user.id, "Главное меню:", reply_markup=main_menu_reply())
 
+
 @dp.callback_query(lambda c: c.data == "back_to_catalog")
 async def back_to_catalog_callback(query: types.CallbackQuery):
     await query.answer()
@@ -358,6 +373,7 @@ async def back_to_catalog_callback(query: types.CallbackQuery):
     except Exception:
         pass
     await bot.send_message(query.from_user.id, "Выберите категорию:", reply_markup=catalog_menu_reply())
+
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("item:"))
 async def product_item_callback(query: types.CallbackQuery):
@@ -446,6 +462,7 @@ async def product_item_callback(query: types.CallbackQuery):
                 reply_markup=product_detail_inline(tea_obj.id)
             )
 
+
 @dp.callback_query(lambda c: c.data == "back_to_details")
 async def back_to_details_callback(query: types.CallbackQuery):
     """
@@ -458,6 +475,7 @@ async def back_to_details_callback(query: types.CallbackQuery):
     except Exception:
         pass
     await bot.send_message(query.from_user.id, "Выберите категорию:", reply_markup=catalog_menu_reply())
+
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("add:"))
 async def add_to_cart_callback(query: types.CallbackQuery):
@@ -486,17 +504,20 @@ async def add_to_cart_callback(query: types.CallbackQuery):
 
     await query.answer("Товар добавлен в корзину.")
 
+
 @dp.callback_query(lambda c: c.data == "clear_cart")
 async def clear_cart_callback(query: types.CallbackQuery):
     CARTS[query.from_user.id] = []
     await query.answer("Корзина очищена.")
     await query.message.edit_text("Ваша корзина пуста.", reply_markup=types.ReplyKeyboardRemove())
 
+
 @dp.callback_query(lambda c: c.data == "edit_cart")
 async def edit_cart_callback(query: types.CallbackQuery):
     await query.answer()
     text, keyboard = build_cart_edit_message(query.from_user.id)
     await query.message.edit_text(text, reply_markup=keyboard)
+
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("cart:"))
 async def cart_edit_callback(query: types.CallbackQuery):
@@ -531,6 +552,7 @@ async def cart_edit_callback(query: types.CallbackQuery):
     CARTS[user_id] = items
     text, keyboard = build_cart_edit_message(user_id)
     await query.message.edit_text(text, reply_markup=keyboard)
+
 
 @dp.callback_query(lambda c: c.data == "calc_cart")
 async def calc_cart_callback(query: types.CallbackQuery, state: FSMContext):
@@ -572,6 +594,7 @@ async def calc_cart_callback(query: types.CallbackQuery, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
     await state.set_state(TeaCalcForm.waiting_for_grams)
+
 
 @dp.message(TeaCalcForm.waiting_for_grams)
 async def process_grams(message: types.Message, state: FSMContext):
@@ -623,11 +646,13 @@ async def process_grams(message: types.Message, state: FSMContext):
         await message.answer(result_text, parse_mode=ParseMode.HTML, reply_markup=result_keyboard)
         await state.clear()
 
+
 @dp.callback_query(lambda c: c.data == "back_to_cart")
 async def back_to_cart_callback(query: types.CallbackQuery):
     await query.answer()
     text, keyboard = build_cart_message(query.from_user.id)
     await query.message.edit_text(text, reply_markup=keyboard)
+
 
 @dp.callback_query(lambda c: c.data == "checkout")
 async def checkout_callback(query: types.CallbackQuery, state: FSMContext):
@@ -640,6 +665,7 @@ async def checkout_callback(query: types.CallbackQuery, state: FSMContext):
     await query.message.edit_text("Введите ваше ФИО (для отмены введите /cancel):")
     await state.set_state(OrderForm.waiting_for_fio)
 
+
 @dp.message(OrderForm.waiting_for_fio)
 async def process_fio(message: types.Message, state: FSMContext):
     fio = message.text.strip()
@@ -649,6 +675,7 @@ async def process_fio(message: types.Message, state: FSMContext):
     await state.update_data(fio=fio)
     await message.answer("Введите адрес доставки (для отмены /cancel):")
     await state.set_state(OrderForm.waiting_for_address)
+
 
 @dp.message(OrderForm.waiting_for_address)
 async def process_address(message: types.Message, state: FSMContext):
@@ -660,6 +687,7 @@ async def process_address(message: types.Message, state: FSMContext):
     await message.answer("Введите номер телефона (для отмены /cancel):")
     await state.set_state(OrderForm.waiting_for_phone)
 
+
 @dp.message(OrderForm.waiting_for_phone)
 async def process_phone(message: types.Message, state: FSMContext):
     phone = message.text.strip()
@@ -670,6 +698,7 @@ async def process_phone(message: types.Message, state: FSMContext):
     await message.answer("Оставьте комментарий к заказу, если есть (для отмены /cancel):")
     await state.set_state(OrderForm.waiting_for_comment)
 
+
 @dp.message(OrderForm.waiting_for_comment)
 async def process_comment(message: types.Message, state: FSMContext):
     comment = message.text.strip()
@@ -679,6 +708,7 @@ async def process_comment(message: types.Message, state: FSMContext):
     await state.update_data(comment=comment)
     await message.answer("Введите промокод, если есть (для отмены /cancel):")
     await state.set_state(OrderForm.waiting_for_promo)
+
 
 @dp.message(OrderForm.waiting_for_promo)
 async def process_promo(message: types.Message, state: FSMContext):
@@ -757,7 +787,7 @@ async def process_promo(message: types.Message, state: FSMContext):
     await message.answer("Главное меню:", reply_markup=main_menu_reply())
 
 
-#Запуск бота
+# Запуск бота
 async def main():
     try:
         await bot.delete_webhook(drop_pending_updates=True)

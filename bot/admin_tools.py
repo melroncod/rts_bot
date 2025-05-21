@@ -4,6 +4,7 @@ from config import ADMIN
 
 MAX_MESSAGE_LENGTH = 4096
 
+
 def split_message(text, limit=MAX_MESSAGE_LENGTH):
     parts = []
     while len(text) > limit:
@@ -14,6 +15,7 @@ def split_message(text, limit=MAX_MESSAGE_LENGTH):
         text = text[split_index:].lstrip()
     parts.append(text)
     return parts
+
 
 async def handle_admin_command(message: Message, bot: Bot):
     if message.from_user.id not in ADMIN:
@@ -35,6 +37,7 @@ async def handle_admin_command(message: Message, bot: Bot):
         await message.reply("✅ Сообщение отправлено.")
     except Exception as e:
         await message.reply(f"⚠️ Ошибка: {e}")
+
 
 async def handle_user_message(message: Message, bot: Bot):
     if message.from_user.id in ADMIN:

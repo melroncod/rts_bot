@@ -9,6 +9,7 @@ app = FastAPI(
 
 app.include_router(teas.router)
 
+
 @app.get("/")
 async def root():
     return {"message": "Tea Store API is running"}
