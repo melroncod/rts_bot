@@ -175,7 +175,8 @@ def build_cart_message(user_id: int):
         [types.InlineKeyboardButton(text="Оформить заказ", callback_data="checkout")],
         [types.InlineKeyboardButton(text="Очистить корзину", callback_data="clear_cart")],
         [types.InlineKeyboardButton(text="Редактировать корзину", callback_data="edit_cart")],
-        [types.InlineKeyboardButton(text="Калькулятор", callback_data="calc_cart")]
+        [types.InlineKeyboardButton(text="Калькулятор корзины", callback_data="calc_cart")],
+        [types.InlineKeyboardButton(text="Назад", callback_data="back_to_main")]
     ])
     return text, keyboard
 
@@ -183,7 +184,8 @@ def build_cart_message(user_id: int):
 def build_cart_edit_message(user_id: int):
     """
     Формируем текст и inline-клавиатуру для редактирования корзины:
-    Кнопки «-», «+», «❌» для каждого товара.
+    Кнопки «-», «+», «❌» для каждого товара,
+    а внизу — «Назад» и «В меню».
     """
     items = CARTS.get(user_id, [])
     if not items:
@@ -193,6 +195,7 @@ def build_cart_edit_message(user_id: int):
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[])
     db = SessionLocal()
     try:
+        # Сначала формируем строки с товарами и кнопками «➖ / ➕ / ❌»
         for item in items:
             tea_obj = get_tea(db, item["tea_id"])
             if not tea_obj:
@@ -201,12 +204,26 @@ def build_cart_edit_message(user_id: int):
             price = float(tea_obj.price)
             subtotal = price * qty
             text += f"<b>{tea_obj.name}</b> x{qty} — {subtotal:.0f}₽\n"
+
             row = [
-                types.InlineKeyboardButton(text="➖", callback_data=f"cart:minus:{tea_obj.id}"),
-                types.InlineKeyboardButton(text="➕", callback_data=f"cart:plus:{tea_obj.id}"),
-                types.InlineKeyboardButton(text="❌", callback_data=f"cart:delete:{tea_obj.id}")
+                types.InlineKeyboardButton(text="➖",   callback_data=f"cart:minus:{tea_obj.id}"),
+                types.InlineKeyboardButton(text="➕",   callback_data=f"cart:plus:{tea_obj.id}"),
+                types.InlineKeyboardButton(text="❌",   callback_data=f"cart:delete:{tea_obj.id}")
             ]
             keyboard.inline_keyboard.append(row)
+
+        # После всех товаров добавляем разделитель
+        text += "\n"
+
+        # Теперь добавляем две отдельные строки с кнопками «Назад» и «В меню»
+        # Каждая кнопка — в своей строке
+        keyboard.inline_keyboard.append([
+            types.InlineKeyboardButton(text="Назад",    callback_data="back_to_cart")
+        ])
+        keyboard.inline_keyboard.append([
+            types.InlineKeyboardButton(text="В меню",   callback_data="back_to_main")
+        ])
+
     except Exception as e:
         logger.exception("Ошибка при формировании сообщения редактирования корзины: %s", e)
     finally:
@@ -465,16 +482,11 @@ async def product_item_callback(query: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "back_to_details")
 async def back_to_details_callback(query: types.CallbackQuery):
-    """
-    Возврат к списку товаров категории.
-    Для упрощения просто возвращаемся к выбору категории.
-    """
     await query.answer()
     try:
         await query.message.delete()
     except Exception:
         pass
-    await bot.send_message(query.from_user.id, "Выберите категорию:", reply_markup=catalog_menu_reply())
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("add:"))
@@ -482,7 +494,7 @@ async def add_to_cart_callback(query: types.CallbackQuery):
     """
     Добавляем товар в корзину по его tea_id: callback_data = "add:<tea_id>"
     """
-    await query.answer()
+    await query.answer("Товар добавлен в корзину.")
     try:
         _, tea_id_str = query.data.split(":")
         tea_id = int(tea_id_str)
@@ -501,15 +513,22 @@ async def add_to_cart_callback(query: types.CallbackQuery):
             break
     else:
         CARTS[user_id].append({"tea_id": tea_id, "quantity": 1})
-
     await query.answer("Товар добавлен в корзину.")
 
 
 @dp.callback_query(lambda c: c.data == "clear_cart")
 async def clear_cart_callback(query: types.CallbackQuery):
+    # Очищаем корзину в вашем хранилище
     CARTS[query.from_user.id] = []
+
+    # Отвечаем на callback, чтобы у кнопки „часики“ исчезли
     await query.answer("Корзина очищена.")
-    await query.message.edit_text("Ваша корзина пуста.", reply_markup=types.ReplyKeyboardRemove())
+
+    # Перезаписываем текст сообщения и полностью убираем inline-клавиатуру
+    await query.message.edit_text(
+        "Ваша корзина пуста.",
+        reply_markup=None
+    )
 
 
 @dp.callback_query(lambda c: c.data == "edit_cart")
