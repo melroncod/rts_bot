@@ -1,3 +1,5 @@
+# app/crud.py
+
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import distinct, or_
@@ -20,10 +22,10 @@ def get_tea_by_name(db: Session, name: str) -> Optional[Tea]:
 
 
 def get_teas(
-        db: Session,
-        skip: int = 0,
-        limit: int = 100,
-        category: Optional[str] = None
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    category: Optional[str] = None
 ) -> List[Tea]:
     """
     Возвращает список активных чаёв.

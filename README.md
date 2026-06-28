@@ -1,126 +1,102 @@
-# Random Tea Store Bot
+# Random Tea Store (RTS Bot)
 
-A lightweight and functional Telegram bot for ordering tea and tea accessories online.
+Telegram-бот витрины чайного магазина: каталог, карточки товаров, корзина,
+калькулятор стоимости по граммам и оформление заказа. Рядом работает REST API
+(FastAPI) для управления каталогом и PostgreSQL в качестве хранилища.
 
-## Overview
+## Архитектура
 
-- Provide users with an intuitive interface to browse the product catalog.
-- Allow users to build a cart, place orders step by step, and send order details directly to the admin.
-- Automatically clear cart cache every 10 hours.
+```
+tea_bot/
+├── app/                  # FastAPI + SQLAlchemy (каталог)
+│   ├── main.py           # точка входа API
+│   ├── database.py       # engine / SessionLocal / Base
+│   ├── models.py         # модель Tea (единственная таблица)
+│   ├── schemas.py        # Pydantic-схемы (v2)
+│   ├── crud.py           # операции с БД
+│   └── routers/teas.py   # CRUD-эндпоинты /api/teas
+├── bot/                  # Telegram-бот (aiogram 3.17)
+│   ├── bot.py            # хендлеры, клавиатуры, корзина, заказы
+│   ├── admin_tools.py    # переписка пользователь ↔ администратор
+│   └── config.py         # чтение и валидация переменных окружения
+├── migrations/database.json  # сид каталога
+├── populate_db.py        # наполнение БД из database.json
+├── run.py                # запуск API + бота вместе (для разработки)
+├── docker-compose.yml    # db, api, bot, pgadmin, авто-бэкап
+├── Dockerfile.api / Dockerfile.bot
+└── requirements.txt
+```
 
-## Features
+### Поток пользователя
 
-- **Product Catalog**
-  - Tea categories and products defined in `PostgreSQL` (name, weight, price, description, photo).
-  - Navigation via custom reply and inline keyboards.
-- **Cart Management**
-  - Add or remove items.
-  - View cart contents and total price.
-  - Clear the cart using `/clear`.
-- **Order Placement (FSM)**
-  - Step-by-step collection of user details: Name → Address → Phone → Comment → Promo code (optional).
-  - Input validation and rounding logic.
-- **Admin Notifications**
-  - Forwards all user messages (excluding admins) to the admin chat.
-  - Instant notifications for new orders and inquiries.
-- **Auto Cache Clearing**
-  - Background task resets all carts every 10 hours.
+1. `/start` → главное меню (reply-клавиатура: Каталог / Поиск / Корзина / Поддержка).
+2. **Каталог** → список категорий (порядок задаётся `CATEGORY_ORDER` в `bot.py`).
+3. Категория → inline-список товаров → карточка товара (фото, цена, цена за грамм, описание).
+4. **Корзина**: просмотр, редактирование (➖/➕/❌), калькулятор по граммам, оформление.
+5. **Оформление**: ФИО → адрес → телефон → комментарий → промокод → заказ уходит администратору.
 
-## Bot Link
+> Корзины хранятся **в памяти процесса** (`CARTS`) и сбрасываются при рестарте,
+> а также периодически (`CART_CLEAR_INTERVAL`). Заказы пока **не сохраняются в БД** —
+> отправляются администратору сообщением. См. «Дальнейшее развитие».
 
-Use the bot to order tea here: https://t.me/RandomTeaStore_Bot
+## Запуск
 
-## Commands
+### 1. Переменные окружения
 
-| Command     | Description                                |
-|-------------|--------------------------------------------|
-| `/start`    | Welcome message and main menu              |
-| `/menu`     | Display product categories                 |
-| `/cart`     | Show cart contents                         |
-| `/clear`    | Clear the cart                             |
-| `/checkout` | Place an order (step-by-step)              |
-| `/help`     | Show available commands                    |
+Скопируйте шаблон и заполните значения:
 
-### Admin Features
+```bash
+cp .env.example .env
+```
 
-- All user messages are automatically forwarded to admin chat.
-- Admins defined by `config.ADMIN`.
+Ключевые переменные: `TOKEN` (бот), `ADMIN` (числовые Telegram ID через запятую),
+`ADMIN_USER` (username для кнопки поддержки), `POSTGRES_*`.
 
-## Dependencies
+> ⚠️ В docker-compose значение `POSTGRES_HOST` должно совпадать с именем сервиса БД — `db`.
 
-- Python 3.11
-- Aiogram
-- python-dotenv
-- ...
+### 2. Docker (рекомендуется)
 
-Dependencies listed in `requirements.txt`.
+```bash
+docker compose up -d --build
+docker compose exec api python populate_db.py   # наполнить каталог (один раз)
+```
 
-## License
+Поднимаются: `db` (Postgres), `api` (FastAPI :8000), `bot` (long-polling),
+`pgadmin` (:5050), `pg_backup` (ежедневный дамп в `./backups`).
 
-Licensed under the Apache License, Version 2.0.  
-© 2025 melroncod
+### 3. Локально без Docker
 
----
+```bash
+python -m venv .venv && . .venv/Scripts/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+# поднимите Postgres и пропишите POSTGRES_HOST=localhost в .env
+python populate_db.py
+python run.py            # запустит API и бота вместе
+```
 
-# Random Tea Store Bot
+Не запускайте `run.py` одновременно с docker-сервисом `bot` — два поллинга
+одного токена приводят к ошибке Telegram 409 (conflict).
 
-Телеграм-бот для заказа чая и аксессуаров.
+## API
 
-## Обзор
+`GET /api/teas`, `GET /api/teas/{id}`, `POST /api/teas`, `PATCH /api/teas/{id}`,
+`DELETE /api/teas/{id}` (мягкое удаление через `is_active=False`).
+Документация: `http://localhost:8000/docs`.
 
-- Удобный интерфейс для навигации по каталогу товаров.
-- Собирайте корзину, оформляйте заказ пошагово, данные сразу отправляются администратору.
-- Автоматическое очищение корзины каждые 10 часов.
+> ⚠️ API **без аутентификации**. Не публикуйте порт 8000 наружу без reverse-proxy
+> и авторизации — иначе любой сможет менять каталог.
 
-## Функционал
+## Безопасность
 
-- **Каталог товаров**
-  - Категории чая и товары из `PostgreSQL` (название, вес, цена, описание, фото).
-  - Навигация через встроенные клавиатуры.
-- **Управление корзиной**
-  - Добавление/удаление позиций.
-  - Просмотр содержимого и общей стоимости.
-  - Очистка корзины командой `/clear`.
-- **Оформление заказа (FSM)**
-  - Пошаговый сбор данных: ФИО → адрес → телефон → комментарий → промокод (опционально).
-  - Валидация и округление.
-- **Уведомления администратору**
-  - Пересылка всех сообщений пользователей в админ-чат.
-  - Мгновенные уведомления о новых заказах и запросах.
-- **Авто-очистка корзины**
-  - Фоновая задача очищает корзину каждые 10 часов.
+- `.env` добавлен в `.gitignore`. **Если файл с реальными секретами уже попадал в
+  репозиторий/публичный доступ — обязательно перевыпустите токен бота и пароли БД.**
+- Весь пользовательский ввод экранируется (`html.escape`) перед отправкой в HTML-сообщениях.
 
-## Ссылка
+## Дальнейшее развитие (рекомендации)
 
-Воспользоваться ботом и заказать чай можно по ссылке: https://t.me/RandomTeaStore_Bot
-
-## Команды
-
-| Команда     | Описание                                   |
-|-------------|--------------------------------------------|
-| `/start`    | Приветствие и главное меню                 |
-| `/menu`     | Показать категории товаров                 |
-| `/cart`     | Показать содержимое корзины                |
-| `/clear`    | Очистить корзину                           |
-| `/checkout` | Оформить заказ (пошагово)                  |
-| `/help`     | Справка по командам                        |
-
-### Админ-функции
-
-- Все сообщения пользователей пересылаются в админ-чат.
-- Администраторы задаются через `config.ADMIN`.
-
-## Зависимости
-
-- Python 3.11
-- Aiogram
-- python-dotenv
-- ...
-
-Зависимости указаны в `requirements.txt`.
-
-## Лицензия
-
-Licensed under the Apache License, Version 2.0.  
-© 2025 melroncod
-
+- Перенести корзины и **заказы в БД** (таблицы `orders`, `order_items`) — история и повторный заказ.
+- Поле остатков (`stock`) у товара и отображение наличия.
+- Реальная логика промокодов (таблица `promocodes` + применение скидки).
+- Авторизация API (API-ключ/JWT) и проверка прав на изменение каталога.
+- Избранное, недавно просмотренные, рекомендации похожих товаров.
+- Пагинация длинных списков товаров.

@@ -1,5 +1,8 @@
+# app/schemas.py
+
+from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, constr, condecimal
+from pydantic import BaseModel, ConfigDict, constr, condecimal
 
 
 class TeaBase(BaseModel):
@@ -40,8 +43,7 @@ class TeaRead(TeaBase):
     Схема для выдачи клиенту (при GET): к базовым полям добавляем id, created_at, updated_at.
     """
     id: int
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

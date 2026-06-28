@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: postgres:15
@@ -6,21 +8,23 @@ services:
       - .env
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     container_name: tea_api
-    depends_on:
-      - db
     env_file:
       - .env
-    ports:
-      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   bot:
@@ -28,31 +32,57 @@ services:
       context: .
       dockerfile: Dockerfile.bot
     container_name: tea_bot
-    depends_on:
-      - api
-      - db
     env_file:
       - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
     restart: unless-stopped
 
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: tea_pgadmin
-    restart: unless-stopped
     env_file:
       - .env
     environment:
       PGADMIN_DEFAULT_EMAIL: "${PGADMIN_DEFAULT_EMAIL}"
       PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_DEFAULT_PASSWORD}"
+      PGADMIN_LISTEN_PORT: 80
+      PGADMIN_ENABLE_PROXY_FIX: "True"
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+
+  pg_backup:
+    image: postgres:15
+    container_name: tea_pg_backup
+    env_file:
+      - .env
+    environment:
+      PGPASSWORD: "${POSTGRES_PASSWORD}"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      bash -c '
+      echo "Postgres backup service started";
+      while true; do
+        TIMESTAMP=$$(date +%Y-%m-%d_%H-%M-%S);
+        pg_dumpall -h db -U "$$POSTGRES_USER" | gzip > /backups/backup_$$TIMESTAMP.sql.gz;
+        find /backups -type f -mtime +7 -name "*.gz" -delete;
+        sleep 86400;
+      done'
+    restart: unless-stopped
 
 volumes:
   pgdata:
-    driver: local
   pgadmin_data:
-    driver: local
