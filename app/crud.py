@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import distinct, or_
+from sqlalchemy import distinct, or_, func
 from .models import Tea
 from .schemas import TeaCreate, TeaUpdate
 
@@ -117,6 +117,79 @@ def get_teas_by_category(db: Session, category: str) -> List[Tea]:
     Возвращает все активные чаи, у которых поле category совпадает с переданной строкой.
     """
     return db.query(Tea).filter(Tea.category == category, Tea.is_active == True).all()
+
+
+def get_random_tea(
+    db: Session,
+    exclude_id: Optional[int] = None,
+    exclude_categories: Optional[List[str]] = None,
+) -> Optional[Tea]:
+    """
+    Возвращает случайный активный чай (через SQL random(), без загрузки всего каталога).
+    exclude_id — id, который нужно исключить (чтобы «ещё раз» не выдавал тот же чай);
+    если после его исключения ничего не осталось — исключение id игнорируется.
+    exclude_categories — категории, которые не участвуют в ролле (посуда, фигурки и т.п.).
+    """
+    base = db.query(Tea).filter(Tea.is_active == True)
+    if exclude_categories:
+        base = base.filter(Tea.category.notin_(exclude_categories))
+    if exclude_id is not None:
+        tea = base.filter(Tea.id != exclude_id).order_by(func.random()).first()
+        if tea:
+            return tea
+    return base.order_by(func.random()).first()
+
+
+# ========== Админ-функции (работают и со скрытыми товарами) ==========
+
+def get_tea_any(db: Session, tea_id: int) -> Optional[Tea]:
+    """Товар по ID независимо от is_active (в отличие от get_tea)."""
+    return db.query(Tea).filter(Tea.id == tea_id).first()
+
+
+def find_teas_by_name(
+    db: Session,
+    text: str,
+    is_active: Optional[bool] = None,
+    limit: int = 20,
+) -> List[Tea]:
+    """Товары, в названии которых есть text; is_active=None — без фильтра по статусу."""
+    query = db.query(Tea).filter(Tea.name.ilike(f"%{text}%"))
+    if is_active is not None:
+        query = query.filter(Tea.is_active == is_active)
+    return query.order_by(Tea.category, Tea.name).limit(limit).all()
+
+
+def list_teas_by_status(db: Session, is_active: bool) -> List[Tea]:
+    """Все товары с заданным статусом, отсортированные по категории и названию."""
+    return (
+        db.query(Tea)
+        .filter(Tea.is_active == is_active)
+        .order_by(Tea.category, Tea.name)
+        .all()
+    )
+
+
+def set_tea_active(db: Session, tea_id: int, is_active: bool) -> Optional[Tea]:
+    """Скрыть/вернуть товар. Возвращает обновлённый объект или None, если не найден."""
+    tea = get_tea_any(db, tea_id)
+    if not tea:
+        return None
+    tea.is_active = is_active
+    db.commit()
+    db.refresh(tea)
+    return tea
+
+
+def set_tea_price(db: Session, tea_id: int, price) -> Optional[Tea]:
+    """Изменить цену товара (в т.ч. скрытого). Возвращает обновлённый объект или None."""
+    tea = get_tea_any(db, tea_id)
+    if not tea:
+        return None
+    tea.price = price
+    db.commit()
+    db.refresh(tea)
+    return tea
 
 
 def search_teas(db: Session, query_text: str) -> List[Tea]:

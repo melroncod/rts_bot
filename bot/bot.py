@@ -20,10 +20,11 @@ from aiogram.fsm.context import FSMContext
 
 from app.database import SessionLocal
 from app.models import Tea
-from app.crud import get_all_categories, get_teas_by_category, get_tea, search_teas
+from app.crud import get_all_categories, get_teas_by_category, get_tea, search_teas, get_random_tea
 from config import TOKEN, ADMIN, ADMIN_USER
 
 from admin_tools import handle_admin_command, handle_user_message
+from admin_catalog import ADMIN_BOT_COMMANDS, register_admin_catalog
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,6 +69,13 @@ CATEGORY_ORDER = [
     "Чайные духи",
 ]
 
+# Категории, которые НЕ являются чаем — не участвуют в «🎲 Случайный чай».
+# При появлении новых не-чайных категорий (аксессуары и т.п.) добавьте их сюда.
+NON_TEA_CATEGORIES = [
+    "Посуда",
+    "Чайные духи",
+]
+
 # Кеш категорий, чтобы не дёргать БД на каждое текстовое сообщение
 _categories_cache = {"value": [], "ts": 0.0}
 
@@ -105,7 +113,8 @@ def fetch_teas_map(tea_ids):
         return {}
     try:
         with db_session() as db:
-            teas = db.query(Tea).filter(Tea.id.in_(ids)).all()
+            # Только активные: скрытый админом товар исчезает из корзин, калькулятора и заказа
+            teas = db.query(Tea).filter(Tea.id.in_(ids), Tea.is_active == True).all()
         return {t.id: t for t in teas}
     except Exception as e:
         logger.exception("Ошибка пакетной выборки товаров: %s", e)
@@ -162,7 +171,8 @@ class TeaCalcForm(StatesGroup):
 def main_menu_reply() -> types.ReplyKeyboardMarkup:
     buttons = [
         [types.KeyboardButton(text="Каталог"), types.KeyboardButton(text="Поиск")],
-        [types.KeyboardButton(text="Корзина"), types.KeyboardButton(text="Поддержка")]
+        [types.KeyboardButton(text="Корзина"), types.KeyboardButton(text="Поддержка")],
+        [types.KeyboardButton(text="🎲 Случайный чай")],
     ]
     return types.ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -221,6 +231,101 @@ def product_detail_inline(tea_id: int) -> types.InlineKeyboardMarkup:
         ],
     ]
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def random_detail_inline(tea_id: int) -> types.InlineKeyboardMarkup:
+    """
+    Клавиатура карточки случайного чая: добавить в корзину, «ещё раз» (реролл),
+    переход в корзину и в меню.
+    """
+    buttons = [
+        [types.InlineKeyboardButton(text="🛒 Добавить в корзину", callback_data=f"add:{tea_id}")],
+        [
+            types.InlineKeyboardButton(text="🎲 Ещё раз", callback_data=f"random:{tea_id}"),
+            types.InlineKeyboardButton(text="🧺 Корзина", callback_data="open_cart"),
+        ],
+        [
+            types.InlineKeyboardButton(text="Назад", callback_data="back_to_details"),
+            types.InlineKeyboardButton(text="В меню", callback_data="back_to_main"),
+        ],
+    ]
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def build_product_caption(tea_obj) -> str:
+    """Единый способ собрать подпись карточки товара (используется и каталогом, и рероллом)."""
+    caption = (
+        f"<b>🍵 {html.escape(tea_obj.name)}</b>\n"
+        f"<b>💰 Цена:</b> {float(tea_obj.price):.0f}₽"
+    )
+    if tea_obj.weight:
+        price_per_gram = float(tea_obj.price) / float(tea_obj.weight)
+        caption += f"\n<b>💶 Цена за грамм:</b> {price_per_gram:.2f}₽/г"
+    if tea_obj.description:
+        # Описание в БД содержит доверенную HTML-разметку (<b>, <i>) от админа — не экранируем.
+        caption += f"\n\n<i>{tea_obj.description}</i>"
+    return caption
+
+
+async def send_product_card(chat_id: int, tea_obj, keyboard, prefix: str = ""):
+    """
+    Отправляет карточку товара (фото по URL / локальное фото / текст) с заданной
+    inline-клавиатурой. prefix — необязательный текст перед подписью (для текстового варианта).
+    """
+    caption = prefix + build_product_caption(tea_obj)
+    photo_url = getattr(tea_obj, "photo_url", None)
+
+    if photo_url and photo_url.startswith("http"):
+        try:
+            await bot.send_photo(chat_id, photo=photo_url, caption=caption, reply_markup=keyboard)
+            return
+        except Exception as e:
+            logger.exception("Ошибка отправки фото по URL: %s", e)
+            await bot.send_message(chat_id, "Ошибка при отправке фото по URL.\n" + caption, reply_markup=keyboard)
+            return
+
+    if photo_url:
+        photo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), photo_url)
+        if os.path.exists(photo_path):
+            try:
+                with open(photo_path, "rb") as photo_file:
+                    await bot.send_photo(chat_id, photo=photo_file, caption=caption, reply_markup=keyboard)
+            except Exception as e:
+                logger.exception("Ошибка при открытии фото: %s", e)
+                await bot.send_message(chat_id, "Ошибка при открытии фото.\n" + caption, reply_markup=keyboard)
+        else:
+            await bot.send_message(chat_id, "Фото не найдено.\n" + caption, reply_markup=keyboard)
+    else:
+        await bot.send_message(chat_id, caption, reply_markup=keyboard)
+
+
+async def send_random_tea(chat_id: int, exclude_id=None):
+    """
+    Выбирает случайный активный ЧАЙ (посуда и чайные духи не участвуют — NON_TEA_CATEGORIES)
+    и отправляет его карточку с клавиатурой реролла.
+    exclude_id — чтобы «Ещё раз» не повторял тот же чай.
+    """
+    try:
+        with db_session() as db:
+            tea_obj = get_random_tea(
+                db,
+                exclude_id=exclude_id,
+                exclude_categories=NON_TEA_CATEGORIES,
+            )
+    except Exception as e:
+        logger.exception("Ошибка выбора случайного чая: %s", e)
+        tea_obj = None
+
+    if not tea_obj:
+        await bot.send_message(chat_id, "В каталоге пока нет доступного чая.")
+        return
+
+    await send_product_card(
+        chat_id,
+        tea_obj,
+        random_detail_inline(tea_obj.id),
+        prefix="<b>🎲 Ваш случайный чай:</b>\n\n",
+    )
 
 
 def build_cart_message(user_id: int):
@@ -304,6 +409,16 @@ async def start(message: types.Message):
     )
 
 
+@dp.message(Command("random"))
+async def random_command(message: types.Message):
+    await send_random_tea(message.from_user.id)
+
+
+@dp.message(lambda message: message.text == "🎲 Случайный чай")
+async def random_button(message: types.Message):
+    await send_random_tea(message.from_user.id)
+
+
 @dp.message(Command("cancel"))
 async def cancel(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -312,6 +427,16 @@ async def cancel(message: types.Message, state: FSMContext):
         await message.answer("Операция отменена.", reply_markup=main_menu_reply())
     else:
         await message.answer("Нет активных операций.", reply_markup=main_menu_reply())
+
+
+# Админ-команды /hide /show /price. Регистрируются здесь, до FSM-обработчиков,
+# чтобы срабатывать даже посреди поиска/оформления заказа. После скрытия/возврата
+# товара сбрасываем кеш категорий — меню каталога обновится сразу.
+register_admin_catalog(
+    dp,
+    on_catalog_changed=lambda: get_categories(force=True),
+    category_order=CATEGORY_ORDER,
+)
 
 
 @dp.message(lambda message: message.text == "Каталог")
@@ -455,66 +580,27 @@ async def product_item_callback(query: types.CallbackQuery):
         await bot.send_message(query.from_user.id, "Товар не найден или недоступен.")
         return
 
-    # Формируем подпись (caption). Название/описание экранируем — они показываются как HTML.
-    caption = (
-        f"<b>🍵 {html.escape(tea_obj.name)}</b>\n"
-        f"<b>💰 Цена:</b> {float(tea_obj.price):.0f}₽"
-    )
-    if tea_obj.weight:
-        price_per_gram = float(tea_obj.price) / float(tea_obj.weight)
-        caption += f"\n<b>💶 Цена за грамм:</b> {price_per_gram:.2f}₽/г"
-    if tea_obj.description:
-        # Описание в БД содержит доверенную HTML-разметку (<b>, <i>) от админа — не экранируем.
-        caption += f"\n\n<i>{tea_obj.description}</i>"
+    await send_product_card(query.from_user.id, tea_obj, product_detail_inline(tea_obj.id))
 
-    photo_url = getattr(tea_obj, "photo_url", None)
 
-    if photo_url and photo_url.startswith("http"):
-        try:
-            await bot.send_photo(
-                query.from_user.id,
-                photo=photo_url,
-                caption=caption,
-                reply_markup=product_detail_inline(tea_obj.id)
-            )
-        except Exception as e:
-            logger.exception("Ошибка отправки фото по URL: %s", e)
-            await bot.send_message(
-                query.from_user.id,
-                "Ошибка при отправке фото по URL.\n" + caption,
-                reply_markup=product_detail_inline(tea_obj.id)
-            )
-    else:
-        if photo_url:
-            photo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), photo_url)
-            if os.path.exists(photo_path):
-                try:
-                    with open(photo_path, "rb") as photo_file:
-                        await bot.send_photo(
-                            query.from_user.id,
-                            photo=photo_file,
-                            caption=caption,
-                            reply_markup=product_detail_inline(tea_obj.id)
-                        )
-                except Exception as e:
-                    logger.exception("Ошибка при открытии фото: %s", e)
-                    await bot.send_message(
-                        query.from_user.id,
-                        "Ошибка при открытии фото.\n" + caption,
-                        reply_markup=product_detail_inline(tea_obj.id)
-                    )
-            else:
-                await bot.send_message(
-                    query.from_user.id,
-                    "Фото не найдено.\n" + caption,
-                    reply_markup=product_detail_inline(tea_obj.id)
-                )
-        else:
-            await bot.send_message(
-                query.from_user.id,
-                caption,
-                reply_markup=product_detail_inline(tea_obj.id)
-            )
+@dp.callback_query(lambda c: c.data and c.data.startswith("random:"))
+async def random_reroll_callback(query: types.CallbackQuery):
+    """Реролл случайного чая: callback_data = "random:<current_tea_id>"."""
+    await query.answer("🎲 Ролл...")
+    exclude_id = None
+    try:
+        _, tea_id_str = query.data.split(":")
+        exclude_id = int(tea_id_str)
+    except Exception:
+        exclude_id = None
+
+    # Убираем предыдущую карточку, чтобы не копить сообщения
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    await send_random_tea(query.from_user.id, exclude_id=exclude_id)
 
 
 @dp.callback_query(lambda c: c.data == "back_to_details")
@@ -536,6 +622,11 @@ async def add_to_cart_callback(query: types.CallbackQuery):
         tea_id = int(tea_id_str)
     except Exception:
         await query.answer("Неверный товар.", show_alert=True)
+        return
+
+    # Товар могли скрыть, пока у пользователя была открыта старая карточка
+    if not fetch_teas_map([tea_id]):
+        await query.answer("Этот товар сейчас недоступен.", show_alert=True)
         return
 
     user_id = query.from_user.id
@@ -727,8 +818,9 @@ async def open_cart_callback(query: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data == "checkout")
 async def checkout_callback(query: types.CallbackQuery, state: FSMContext):
     user_id = query.from_user.id
-    if not CARTS.get(user_id):
-        await query.answer("Ваша корзина пуста.", show_alert=True)
+    lines, _ = cart_lines(user_id)  # учитывает скрытые товары, в отличие от CARTS
+    if not lines:
+        await query.answer("В корзине нет доступных товаров.", show_alert=True)
         return
 
     await query.answer()
@@ -865,11 +957,38 @@ async def process_promo(message: types.Message, state: FSMContext):
 
 
 # Запуск бота
+async def setup_bot_commands():
+    """
+    Регистрируем команды для меню Telegram: публичные — всем,
+    публичные + админские — только в личных чатах админов.
+    """
+    commands = [
+        types.BotCommand(command="start", description="Главное меню"),
+        types.BotCommand(command="random", description="🎲 Случайный чай"),
+        types.BotCommand(command="cancel", description="Отменить текущую операцию"),
+    ]
+    try:
+        await bot.set_my_commands(commands)
+    except Exception as e:
+        logger.exception("Не удалось установить команды бота: %s", e)
+
+    for admin_id in ADMIN:
+        try:
+            await bot.set_my_commands(
+                commands + ADMIN_BOT_COMMANDS,
+                scope=types.BotCommandScopeChat(chat_id=admin_id),
+            )
+        except Exception as e:
+            # Например, админ ещё ни разу не писал боту — Telegram не знает этот чат
+            logger.warning("Не удалось установить админ-меню для %s: %s", admin_id, e)
+
+
 async def main():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
     except Exception as e:
         logger.exception("Ошибка удаления webhook: %s", e)
+    await setup_bot_commands()
     asyncio.create_task(clear_cache_periodically())
     await dp.start_polling(bot)
 
